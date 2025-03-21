@@ -4,6 +4,16 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogTrigger,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+    DialogClose
+} from '@/components/ui/dialog';
 import { toast } from 'vue-sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { marked } from 'marked';
@@ -153,6 +163,34 @@ function showCustomToast(title: string, message: string, label: string, onClick:
     });
 }
 
+const transcriptPlayer = ref<HTMLIFrameElement | null>(null);
+
+function jumpToTime(seconds: number) {
+    if (transcriptPlayer.value?.contentWindow) {
+        transcriptPlayer.value.contentWindow.postMessage(
+            JSON.stringify({
+                event: 'command',
+                func: 'seekTo',
+                args: [seconds, true]
+            }),
+            '*'
+        );
+    }
+}
+
+function parseTranscription(transcription: string) {
+    const regex = /\[(\d{2}):(\d{2})\.\d{3} --> \d{2}:\d{2}\.\d{3}]\s+(.+)/g;
+    const lines: { time: number; text: string }[] = [];
+    let match;
+    while ((match = regex.exec(transcription)) !== null) {
+        const minutes = parseInt(match[1]);
+        const seconds = parseInt(match[2]);
+        const totalSeconds = minutes * 60 + seconds;
+        lines.push({ time: totalSeconds, text: match[3] });
+    }
+    return lines;
+}
+
 // Renderiza mensagens com formatação básica (negrito, listas, etc.)
 function formatMessage(text: string): string {
     return marked.parse(text);
@@ -170,17 +208,72 @@ function formatMessage(text: string): string {
 
         <CardContent class="flex flex-col flex-grow overflow-hidden">
             <!-- Resumo e vídeo lado a lado -->
-            <div class="grid grid-cols-4 gap-4 items-start">
+            <div class="grid grid-cols-4 gap-4 items-start" v-if="isProcessed">
                 <!-- Vídeo (1/4) -->
                 <div class="col-span-1">
                     <div class="relative w-full" style="aspect-ratio: 16 / 9;">
                         <iframe
-                            :src="`https://www.youtube.com/embed/${video.video_id}`"
+                            ref="transcriptPlayer"
+                            :src="`https://www.youtube.com/embed/${video.video_id}?enablejsapi=1`"
                             class="absolute top-0 left-0 w-full h-full rounded-lg"
                             frameborder="0"
                             allowfullscreen
                         ></iframe>
                     </div>
+                    <Dialog>
+                        <DialogTrigger as-child>
+                            <Button variant="secondary" class="mt-2 w-full">📝 Ver Transcrição</Button>
+                        </DialogTrigger>
+                        <DialogContent class="sm:max-w-[1425px] max-h-[90dvh] p-0 overflow-hidden">
+                            <DialogHeader class="p-6 pb-0">
+                                <DialogTitle>Transcrição Completa</DialogTitle>
+                                <DialogDescription>
+                                    Abaixo está a transcrição do vídeo. Clique nas minutagens para pular.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <!-- Conteúdo lado a lado -->
+                            <div class="flex gap-4 p-6 overflow-auto max-h-[65vh]">
+                                <!-- Vídeo à esquerda -->
+                                <div class="w-1/2">
+                                    <div class="relative w-full" style="aspect-ratio: 16 / 9;">
+                                        <iframe
+                                            ref="transcriptPlayer"
+                                            :src="`https://www.youtube.com/embed/${video.video_id}?enablejsapi=1`"
+                                            class="absolute top-0 left-0 w-full h-full rounded-lg"
+                                            frameborder="0"
+                                            allowfullscreen
+                                        ></iframe>
+                                    </div>
+                                </div>
+
+                                <!-- Transcrição à direita -->
+                                <div class="w-1/2 overflow-y-auto pr-2">
+                                    <div v-if="video.transcription">
+                                        <div
+                                            v-for="(line, i) in parseTranscription(video.transcription)"
+                                            :key="i"
+                                            class="mb-2"
+                                        >
+                                            <button
+                                                class="text-blue-500 hover:underline"
+                                                @click="jumpToTime(line.time)"
+                                            >
+                                                {{ new Date(line.time * 1000).toISOString().substr(14, 5) }}
+                                            </button>
+                                            <span class="ml-2">{{ line.text }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <DialogFooter class="p-4 pt-0">
+                                <DialogClose as-child>
+                                    <Button variant="outline">Fechar</Button>
+                                </DialogClose>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
 
                 <!-- Resumo (3/4) -->
@@ -189,6 +282,29 @@ function formatMessage(text: string): string {
                     <p class="mb-4">{{ video.summary }}</p>
                 </div>
             </div>
+
+            <template v-else>
+                <div v-if="video.status === 'processing'">
+                    <p class="text-center mt-4">⏳ Processando vídeo...</p>
+                </div>
+
+                <div v-else>
+                    <p class="text-center mt-4" v-if="video.status === 'failed_video_processing'">❌📹 Erro ao processar
+                        vídeo</p>
+                    <p class="text-center mt-4" v-else-if="video.status === 'failed_audio_processing'">❌🎵 Erro ao
+                        processar áudio</p>
+                    <p class="text-center mt-4" v-else-if="video.status === 'failed_transcription'">❌📝 Erro ao
+                        transcrever</p>
+                    <p class="text-center mt-4" v-else>❌⚠️ Erro desconhecido</p>
+
+                    <!-- Botão visível apenas para status de erro -->
+                    <div class="text-center mt-2" v-if="video.status.startsWith('failed')">
+                        <Button @click="retryVideo(video.id)">
+                            🔁 Tentar novamente
+                        </Button>
+                    </div>
+                </div>
+            </template>
 
             <!-- Exibe chat APENAS se o vídeo estiver processado -->
             <template v-if="isProcessed">
@@ -218,29 +334,16 @@ function formatMessage(text: string): string {
                     </div>
                 </div>
             </template>
-            <template v-else>
-                <div v-if="video.status === 'processing'">
-                    <p class="text-center mt-4">⏳ Processando vídeo...</p>
-                </div>
-
-                <div v-else>
-                    <p class="text-center mt-4" v-if="video.status === 'failed_video_processing'">❌📹 Erro ao processar
-                        vídeo</p>
-                    <p class="text-center mt-4" v-else-if="video.status === 'failed_audio_processing'">❌🎵 Erro ao
-                        processar áudio</p>
-                    <p class="text-center mt-4" v-else-if="video.status === 'failed_transcription'">❌📝 Erro ao
-                        transcrever</p>
-                    <p class="text-center mt-4" v-else>❌⚠️ Erro desconhecido</p>
-
-                    <!-- Botão visível apenas para status de erro -->
-                    <div class="text-center mt-2" v-if="video.status.startsWith('failed')">
-                        <Button @click="retryVideo(video.id)">
-                            🔁 Tentar novamente
-                        </Button>
-                    </div>
-                </div>
-            </template>
 
         </CardContent>
     </Card>
 </template>
+
+<style scoped>
+.DialogContent {
+    min-width: 300px;
+    background: white;
+    padding: 30px;
+    border-radius: 4px;
+}
+</style>

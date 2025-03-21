@@ -17,7 +17,9 @@ class ProcessVideoJob implements ShouldQueue
 {
     use InteractsWithQueue, Queueable, SerializesModels;
 
-    public function __construct(public Video $video) {}
+    public function __construct(public Video $video)
+    {
+    }
 
     public function handle(): void
     {
@@ -71,7 +73,9 @@ class ProcessVideoJob implements ShouldQueue
 
             $response = Http::withToken(env('OPENAI_API_KEY'))->post('https://api.openai.com/v1/chat/completions', [
                 'model' => 'gpt-4o-mini',
-                'messages' => [['role' => 'user', 'content' => "Resuma esse texto que é uma transcrição de um vídeo: {$transcription}"]],
+                'messages' => [
+                    ['role' => 'user', 'content' => "Resuma esse texto que é uma transcrição de um vídeo, então trate isso como um vídeo: {$transcription}"]
+                ],
             ]);
 
             $summary = $response->json('choices.0.message.content') ?? 'Erro ao resumir texto';
