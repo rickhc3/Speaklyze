@@ -262,7 +262,7 @@ function formatMessage(text: string): string {
 
 
                                 <!-- Transcrição à direita -->
-                                <div class="w-1/2 overflow-y-auto pr-2">
+                                <div class="w-1/2 overflow-y-auto p-3">
                                     <input
                                         v-model="searchTerm"
                                         type="text"
