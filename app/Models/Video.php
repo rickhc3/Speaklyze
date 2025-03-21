@@ -23,6 +23,11 @@ class Video extends Model
         'status',
         'channel',
         'channel_url',
+        'description',
+        'genre',
+        'published_date',
+        'language',
+        'user_id',
     ];
 
     public function chatMessages()

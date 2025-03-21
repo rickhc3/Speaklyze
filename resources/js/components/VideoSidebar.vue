@@ -1,11 +1,25 @@
 <script setup>
 import { ref, computed, defineProps, defineEmits } from 'vue';
+import axios from 'axios';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger
+} from '@/components/ui/alert-dialog';
 
 const props = defineProps({
     videos: Array,
-    deletedVideos: Array
+    deletedVideos: Array,
+    selectedVideo: Object
+
 });
 
 const emit = defineEmits(['select', 'delete', 'restore']);
@@ -18,12 +32,44 @@ const processingVideos = computed(() => props.videos.filter(v => v.status === 'p
 const completedVideos = computed(() => props.videos.filter(v => v.status === 'completed'));
 const failedVideos = computed(() => props.videos.filter(v => ['failed_video_processing', 'failed_audio_processing', 'failed_transcription'].includes(v.status)));
 const sentVideos = computed(() => props.videos.filter(v => !v.status || v.status === 'sent')); // Status "enviado"
+
+async function forceDelete(videoId) {
+    await axios.delete(`/api/videos/${videoId}/force-delete`);
+    emit('refresh');
+}
+
+async function emptyTrash() {
+    await axios.delete(`/api/videos/trash/empty`);
+    emit('refresh');
+}
 </script>
 
 <template>
-    <div class="w-[25%] bg-gray-800 p-4 border-r border-gray-700 overflow-y-auto">
+    <div class="w-full h-full p-4 border-r border-gray-700 overflow-y-auto">
         <div class="flex justify-between items-center mb-4">
             <h2 class="text-xl font-bold"> {{ showTrash ? 'Lixeira 🗑️' : 'Vídeos 📺' }} </h2>
+            <div class="flex gap-2 justify-end" v-if="showTrash && deletedVideos.length">
+                <!-- Limpar Lixeira -->
+                <AlertDialog>
+                    <AlertDialogTrigger as-child>
+                        <Button variant="destructive" size="sm">🧹 Limpar Lixeira</Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Tem certeza que deseja esvaziar a lixeira?</AlertDialogTitle>
+                            <AlertDialogDescription>Essa ação é irreversível. Todos os vídeos excluídos serão
+                                removidos
+                                permanentemente.
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction @click="emptyTrash">Confirmar</AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </div>
+
             <Button variant="outline" size="sm" @click="showTrash = !showTrash">
                 {{ showTrash ? 'Voltar' : 'Lixeira' }}
             </Button>
@@ -32,19 +78,25 @@ const sentVideos = computed(() => props.videos.filter(v => !v.status || v.status
         <!-- Tabs apenas se a Lixeira NÃO estiver ativada -->
         <Tabs v-if="!showTrash" v-model="activeTab" class="w-full">
             <TabsList class="grid grid-cols-3 gap-2">
-                <TabsTrigger value="processing">⏳ Processando</TabsTrigger>
-                <TabsTrigger value="completed">✅ Concluído</TabsTrigger>
-                <TabsTrigger value="failed">❌ Falha</TabsTrigger>
+                <TabsTrigger class="text-xs" value="processing">🕒 Fila</TabsTrigger>
+                <TabsTrigger class="text-xs" value="completed">✅ Concluído</TabsTrigger>
+                <TabsTrigger class="text-xs" value="failed">❌ Falha</TabsTrigger>
             </TabsList>
 
             <!-- Processando -->
             <TabsContent value="processing">
                 <div v-if="processingVideos.length" class="mt-2">
-                    <div v-for="video in processingVideos" :key="video.id"
-                         class="p-2 mb-2 border border-gray-700 rounded cursor-pointer hover:bg-gray-700 flex justify-between items-center">
-                        <span @click="emit('select', video)">
+                    <div
+                        v-for="video in processingVideos"
+                        :key="video.id"
+                        class="p-2 mb-2 border border-gray-700 rounded cursor-pointer flex justify-between items-center"
+                        :class="[
+                                  'p-2 mb-2 border border-gray-700 rounded cursor-pointer flex justify-between items-center hover:bg-white/5',
+                                  props.selectedVideo?.id === video.id ? 'bg-white/10' : ''
+                                ]">
+                          <span @click="emit('select', video)">
                             {{ video.title }}
-                        </span>
+                          </span>
                         <Button variant="ghost" size="sm" @click="emit('delete', video.id)">🗑️</Button>
                     </div>
                 </div>
@@ -55,7 +107,11 @@ const sentVideos = computed(() => props.videos.filter(v => !v.status || v.status
             <TabsContent value="completed">
                 <div v-if="completedVideos.length" class="mt-2">
                     <div v-for="video in completedVideos" :key="video.id"
-                         class="p-2 mb-2 border border-gray-700 rounded cursor-pointer hover:bg-gray-700 flex justify-between items-center">
+                         class="p-2 mb-2 border border-gray-700 rounded cursor-pointer hover:bg-white/5 flex justify-between items-center"
+                         :class="[
+                                      'p-2 mb-2 border border-gray-700 rounded cursor-pointer flex justify-between items-center hover:bg-white/5',
+                                      props.selectedVideo?.id === video.id ? 'bg-white/10' : ''
+                                  ]">
                         <span @click="emit('select', video)">
                             {{ video.title }}
                         </span>
@@ -69,7 +125,11 @@ const sentVideos = computed(() => props.videos.filter(v => !v.status || v.status
             <TabsContent value="failed">
                 <div v-if="failedVideos.length" class="mt-2">
                     <div v-for="video in failedVideos" :key="video.id"
-                         class="p-2 mb-2 border border-gray-700 rounded cursor-pointer hover:bg-gray-700 flex justify-between items-center">
+                         class="p-2 mb-2 border border-gray-700 rounded cursor-pointer hover:bg-white/5 flex justify-between items-center"
+                         :class="[
+                                      'p-2 mb-2 border border-gray-700 rounded cursor-pointer flex justify-between items-center hover:bg-white/5',
+                                      props.selectedVideo?.id === video.id ? 'bg-white/10' : ''
+                                    ]">
                         <span @click="emit('select', video)">
                             {{ video.title }}
                         </span>
@@ -87,6 +147,23 @@ const sentVideos = computed(() => props.videos.filter(v => !v.status || v.status
                      class="p-2 mb-2 border border-gray-700 rounded cursor-pointer hover:bg-gray-700 flex justify-between items-center">
                     <span>{{ video.title }}</span>
                     <Button variant="ghost" size="sm" @click="emit('restore', video.id)">♻️</Button>
+                    <AlertDialog>
+                        <AlertDialogTrigger as-child>
+                            <Button variant="ghost" size="sm" class="text-red-500">🗑️</Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Excluir definitivamente?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Esta ação não poderá ser desfeita.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction @click="forceDelete(video.id)">Excluir</AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                 </div>
             </div>
             <p v-else class="text-gray-400 text-center">Nenhum vídeo excluído</p>

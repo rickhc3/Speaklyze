@@ -14,15 +14,17 @@ class VideoProcessed implements ShouldBroadcast
     use SerializesModels, InteractsWithSockets;
 
     public Video $video;
+    public int $userId; // Adicionando o ID do usuário
 
     public function __construct(Video $video)
     {
         $this->video = $video;
+        $this->userId = $video->user_id; // Pegando o ID do usuário que enviou o vídeo
     }
 
     public function broadcastOn(): array
     {
-        return [new PrivateChannel('videos.' . $this->video->id)];
+        return [new PrivateChannel("users.{$this->userId}")]; // Envia apenas para o usuário dono do vídeo
     }
 
     public function broadcastAs(): string
@@ -35,7 +37,9 @@ class VideoProcessed implements ShouldBroadcast
         return [
             'id' => $this->video->id,
             'title' => $this->video->title,
-            'summary' => $this->video->summary
+            'summary' => $this->video->summary,
+            'status' => $this->video->status,
+            'video_id' => $this->video->video_id,
         ];
     }
 }

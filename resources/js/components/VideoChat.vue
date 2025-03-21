@@ -1,9 +1,12 @@
-<script setup>
+<script setup lang="ts">
 import { ref, watch, computed, onMounted, nextTick } from 'vue';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { toast } from 'vue-sonner';
+import { Toaster } from '@/components/ui/sonner';
+import { marked } from 'marked';
 
 const props = defineProps({
     video: Object // Vídeo selecionado
@@ -69,12 +72,10 @@ async function sendMessage() {
 
     isSending.value = true;
     const userMessage = newMessage.value.trim();
-    newMessage.value = ''; // Limpa imediatamente a textarea
+    newMessage.value = '';
 
     messages.value.push({ role: 'user', message: userMessage });
-
-    const tempLoadingMessage = { role: 'assistant', message: '⏳ Processando resposta...' };
-    messages.value.push(tempLoadingMessage);
+    messages.value.push({ role: 'assistant', message: '' }); // Começa vazio
 
     await nextTick();
     scrollToBottom();
@@ -89,12 +90,26 @@ async function sendMessage() {
             sessionId.value = data.session_id;
         }
 
-        // Remove a mensagem de "Processando resposta..."
-        messages.value.pop();
-        messages.value.push({ role: 'assistant', message: data.reply });
+        // Mostra a resposta como se estivesse sendo digitada
+        const fullText = data.reply;
+        let currentText = '';
+        let index = 0;
+
+        const typingInterval = setInterval(async () => {
+            if (index < fullText.length) {
+                currentText += fullText[index];
+                messages.value[messages.value.length - 1].message = currentText;
+                index++;
+
+                await nextTick(); // aguarda o DOM ser atualizado
+                scrollToBottom(); // então rola até o fim
+            } else {
+                clearInterval(typingInterval);
+            }
+        }, 30);
 
     } catch (error) {
-        messages.value.pop();
+        messages.value.pop(); // remove resposta vazia
         messages.value.push({ role: 'assistant', message: '❌ Erro ao obter resposta. Tente novamente.' });
     }
 
@@ -103,24 +118,45 @@ async function sendMessage() {
     await nextTick();
     scrollToBottom();
 
-    // Aguarda um pequeno delay antes de focar
     setTimeout(() => {
-        if (messageInput.value) {
-            messageInput.value.focus();
-        }
+        messageInput.value?.focus();
     }, 100);
 }
 
+
+async function retryVideo(videoId) {
+    try {
+        await axios.post(`/api/videos/${videoId}/retry`);
+        showCustomToast('✅ O vídeo será reprocessado!', 'Aguarde alguns instantes.', 'Ok', () => {
+            emit('close');
+        });
+        emit('refresh');
+    } catch (error) {
+        showCustomToast('❌ Não foi possível reprocessar o vídeo.', 'Tente novamente mais tarde.', 'Ok', () => {
+            emit('close');
+        });
+        console.error(error);
+    }
+}
+
+function showCustomToast(title: string, message: string, label: string, onClick: () => void) {
+    toast(title, {
+        description: message,
+        action: {
+            label: label,
+            onClick: onClick
+        }
+    });
+}
+
 // Renderiza mensagens com formatação básica (negrito, listas, etc.)
-function formatMessage(text) {
-    return text
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Negrito
-        .replace(/(\d+)\.\s(.*?)(?=\n|$)/g, '<li>$1. $2</li>') // Listas numeradas
-        .replace(/\n/g, '<br>'); // Quebras de linha
+function formatMessage(text: string): string {
+    return marked.parse(text);
 }
 </script>
 
 <template>
+    <Toaster position="top-center" :expand="true" />
     <Card v-if="video" class="h-full flex flex-col">
         <!-- Título e botão de fechar na mesma linha -->
         <CardHeader class="relative flex justify-between items-center">
@@ -179,14 +215,26 @@ function formatMessage(text) {
                 </div>
             </template>
             <template v-else>
-                <p class="text-center mt-4" v-if="video.status === 'processing'">⏳ Processando vídeo...</p>
-                <p class="text-center mt-4" v-else-if="video.status === 'failed_video_processing'">❌📹 Erro ao processar
-                    vídeo</p>
-                <p class="text-center mt-4" v-else-if="video.status === 'failed_audio_processing'">❌🎵 Erro ao processar
-                    áudio</p>
-                <p class="text-center mt-4" v-else-if="video.status === 'failed_transcription'">❌📝 Erro ao
-                    transcrever</p>
-                <p class="text-center mt-4" v-else>❌⚠️ Erro desconhecido</p>
+                <div v-if="video.status === 'processing'">
+                    <p class="text-center mt-4">⏳ Processando vídeo...</p>
+                </div>
+
+                <div v-else>
+                    <p class="text-center mt-4" v-if="video.status === 'failed_video_processing'">❌📹 Erro ao processar
+                        vídeo</p>
+                    <p class="text-center mt-4" v-else-if="video.status === 'failed_audio_processing'">❌🎵 Erro ao
+                        processar áudio</p>
+                    <p class="text-center mt-4" v-else-if="video.status === 'failed_transcription'">❌📝 Erro ao
+                        transcrever</p>
+                    <p class="text-center mt-4" v-else>❌⚠️ Erro desconhecido</p>
+
+                    <!-- Botão visível apenas para status de erro -->
+                    <div class="text-center mt-2" v-if="video.status.startsWith('failed')">
+                        <Button @click="retryVideo(video.id)">
+                            🔁 Tentar novamente
+                        </Button>
+                    </div>
+                </div>
             </template>
 
         </CardContent>
