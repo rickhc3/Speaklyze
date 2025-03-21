@@ -248,7 +248,7 @@ function formatMessage(text: string): string {
                             <!-- Conteúdo lado a lado -->
                             <div class="flex gap-4 p-6 overflow-auto max-h-[65vh]">
                                 <!-- Vídeo à esquerda -->
-                                <div class="w-1/2">
+                                <div class="w-1/2 flex justify-center items-center">
                                     <div class="relative w-full" style="aspect-ratio: 16 / 9;">
                                         <iframe
                                             ref="transcriptPlayer"
