@@ -12,16 +12,15 @@ const props = defineProps({
     video: Object // Vídeo selecionado
 });
 
-const emit = defineEmits(['close']);
-
+const emit = defineEmits(['close', 'refresh']);
 const messages = ref([]);
 const newMessage = ref('');
 const sessionId = ref(null);
 const chatContainer = ref(null);
-const isSending = ref(false); // Bloqueia enquanto aguarda resposta
-const messageInput = ref(null); // Referência para a Textarea
-
+const isSending = ref(false);
+const messageInput = ref(null);
 const isProcessed = computed(() => props.video?.status === 'completed');
+const isTyping = ref(false);
 
 // Carregar mensagens da conversa
 async function fetchMessages() {
@@ -59,7 +58,7 @@ onMounted(() => {
 });
 
 // Envia mensagem ao pressionar Enter
-function handleKeyDown(event) {
+function handleKeyDown(event: KeyboardEvent) {
     if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         sendMessage();
@@ -68,7 +67,7 @@ function handleKeyDown(event) {
 
 // Envia mensagem para o backend
 async function sendMessage() {
-    if (!props.video || !newMessage.value.trim() || isSending.value) return;
+    if (!props.video || !newMessage.value.trim() || isSending.value || isTyping.value) return;
 
     isSending.value = true;
     const userMessage = newMessage.value.trim();
@@ -95,6 +94,8 @@ async function sendMessage() {
         let currentText = '';
         let index = 0;
 
+        isTyping.value = true;
+
         const typingInterval = setInterval(async () => {
             if (index < fullText.length) {
                 currentText += fullText[index];
@@ -105,12 +106,15 @@ async function sendMessage() {
                 scrollToBottom(); // então rola até o fim
             } else {
                 clearInterval(typingInterval);
+                isTyping.value = false; // ✅ Libera o envio após terminar
             }
-        }, 30);
+        }, 5);
 
     } catch (error) {
         messages.value.pop(); // remove resposta vazia
         messages.value.push({ role: 'assistant', message: '❌ Erro ao obter resposta. Tente novamente.' });
+    } finally {
+        isSending.value = false;
     }
 
     isSending.value = false;
@@ -124,7 +128,7 @@ async function sendMessage() {
 }
 
 
-async function retryVideo(videoId) {
+async function retryVideo(videoId: number) {
     try {
         await axios.post(`/api/videos/${videoId}/retry`);
         showCustomToast('✅ O vídeo será reprocessado!', 'Aguarde alguns instantes.', 'Ok', () => {
@@ -199,14 +203,14 @@ function formatMessage(text: string): string {
                         :disabled="isSending"
                         class="resize-none"
                     />
-                    <Button @click="sendMessage" :disabled="isSending">
-                        {{ isSending ? 'Aguardando resposta...' : 'Enviar' }}
+                    <Button @click="sendMessage" :disabled="isSending || isTyping">
+                        {{ isSending || isTyping ? 'Aguardando resposta...' : 'Enviar' }}
                     </Button>
                 </div>
 
                 <h3 class="text-lg font-semibold mt-4">Conversas</h3>
                 <div ref="chatContainer"
-                     class="mt-2 flex flex-col gap-2 max-h-100 overflow-y-auto p-4 border border-gray-700 rounded-lg">
+                     class="mt-2 flex flex-col gap-2 max-h-100 overflow-y-auto p-4 border border-gray-700 rounded-lg scroll-smooth">
                     <div v-for="msg in messages" :key="msg.message"
                          class="p-2 rounded-lg max-w-3/4"
                          :class="msg.role === 'user' ? 'bg-blue-500 text-white self-end' : 'bg-gray-700 text-white self-start'"

@@ -100,7 +100,7 @@ async function emptyTrash() {
                         <Button variant="ghost" size="sm" @click="emit('delete', video.id)">🗑️</Button>
                     </div>
                 </div>
-                <p v-else class="text-gray-400 mt-2 text-center">Nenhum vídeo em processamento</p>
+                <p v-else class="text-gray-400 mt-2 text-center">Nenhum vídeo na fila</p>
             </TabsContent>
 
             <!-- Concluído -->
