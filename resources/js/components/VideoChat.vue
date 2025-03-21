@@ -22,6 +22,19 @@ const props = defineProps({
     video: Object // Vídeo selecionado
 });
 
+const searchTerm = ref('');
+
+const filteredTranscription = computed(() => {
+    const term = searchTerm.value.toLowerCase();
+
+    // Verifica se props.video e transcription existem
+    if (!props.video || !props.video.transcription) return [];
+
+    return parseTranscription(props.video.transcription).filter((line) =>
+        line.text.toLowerCase().includes(term)
+    );
+});
+
 const emit = defineEmits(['close', 'refresh']);
 const messages = ref([]);
 const newMessage = ref('');
@@ -247,11 +260,18 @@ function formatMessage(text: string): string {
                                     </div>
                                 </div>
 
+
                                 <!-- Transcrição à direita -->
                                 <div class="w-1/2 overflow-y-auto pr-2">
+                                    <input
+                                        v-model="searchTerm"
+                                        type="text"
+                                        placeholder="Buscar na transcrição..."
+                                        class="mb-4 w-full p-2 border rounded bg-background text-foreground"
+                                    />
                                     <div v-if="video.transcription">
                                         <div
-                                            v-for="(line, i) in parseTranscription(video.transcription)"
+                                            v-for="(line, i) in filteredTranscription"
                                             :key="i"
                                             class="mb-2"
                                         >
