@@ -19,7 +19,10 @@ class Video extends Model
         'transcription',
         'summary',
         'video_id',
-        'chat_session_id',	
+        'chat_session_id',
+        'status',
+        'channel',
+        'channel_url',
     ];
 
     public function chatMessages()

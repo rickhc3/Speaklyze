@@ -29,7 +29,11 @@ class ChatController extends Controller
 
         // Recuperar mensagens da sessão específica desse vídeo
         $messages = collect([
-            ['role' => 'assistant', 'content' => "Aqui está o resumo do vídeo:\n" . $video->summary]
+            ['role' => 'assistant', 'content' => "Aqui está o título do vídeo:\n" . $video->title],
+            ['role' => 'assistant', 'content' => "Aqui está o título do canal do vídeo:\n" . $video->channel],
+            ['role' => 'assistant', 'content' => "Aqui está a transcrição do vídeo:\n" . $video->transcription],
+            ['role' => 'assistant', 'content' => "Aqui está o resumo do vídeo:\n" . $video->summary],
+            ['role' => 'assistant', 'content' => "Aqui está a transcrição do vídeo:\n" . $video->transcription],
         ])->merge(
             ChatMessage::where('chat_session_id', $video->chat_session_id)
                 ->orderBy('created_at')
@@ -58,6 +62,7 @@ class ChatController extends Controller
             'message' => $reply,
             'video_id' => $video->id
         ]);
+
 
         return response()->json(['reply' => $reply]);
     }
