@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, nextTick } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,6 +17,8 @@ import {
 import { toast } from 'vue-sonner';
 import { Toaster } from '@/components/ui/sonner';
 import { marked } from 'marked';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 const props = defineProps({
     video: Object // Vídeo selecionado
@@ -44,6 +46,90 @@ const isSending = ref(false);
 const messageInput = ref(null);
 const isProcessed = computed(() => props.video?.status === 'completed');
 const isTyping = ref(false);
+const showInlineTranscription = ref(false);
+const showCaptions = ref(false);
+const currentCaption = ref('');
+const showSubtitle = ref(true);
+const currentSubtitle = ref('');
+const intervalRef = ref<number | null>(null);
+
+function getCurrentSubtitle(): string {
+    if (!props.video?.transcription) return '';
+    const time = playerCurrentTime.value;
+
+    const lines = parseTranscription(props.video.transcription);
+    const current = lines.findLast(line => line.time <= time);
+    return current?.text || '';
+}
+
+const playerCurrentTime = ref(0);
+
+function updateCurrentTimeLoop() {
+    if (!transcriptPlayer.value?.contentWindow) return;
+
+    transcriptPlayer.value.contentWindow.postMessage(
+        JSON.stringify({
+            event: 'listening'
+        }),
+        '*'
+    );
+
+    window.addEventListener('message', receiveMessage);
+
+    intervalRef.value = window.setInterval(() => {
+        if (transcriptPlayer.value?.contentWindow) {
+            transcriptPlayer.value.contentWindow.postMessage(
+                JSON.stringify({
+                    event: 'command',
+                    func: 'getCurrentTime',
+                    args: []
+                }),
+                '*'
+            );
+        }
+    }, 500); // a cada 0.5s
+}
+
+function receiveMessage(event: MessageEvent) {
+    try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+
+        if (data.event === 'infoDelivery' && data.info && typeof data.info.currentTime === 'number') {
+            playerCurrentTime.value = data.info.currentTime;
+            currentSubtitle.value = getCurrentSubtitle();
+        }
+    } catch (error) {
+        console.error('Erro ao processar mensagem do iframe:', error);
+    }
+}
+
+function updateCaption(currentTime: number) {
+    const lines = parseTranscription(props.video.transcription || '');
+    const closestLine = lines.findLast((line) => line.time <= currentTime);
+    currentCaption.value = closestLine?.text || '';
+}
+
+// Listener de tempo do vídeo
+function setupPlayerTimeUpdate() {
+    const interval = setInterval(() => {
+        const player = transcriptPlayer.value?.contentWindow;
+        if (player) {
+            player.postMessage(JSON.stringify({ event: 'listening_for_time' }), '*');
+        }
+    }, 1000);
+
+    window.addEventListener('message', (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data?.info?.currentTime != null) {
+                updateCaption(data.info.currentTime);
+            }
+        } catch (_) {
+        }
+    });
+
+    return interval;
+}
 
 // Carregar mensagens da conversa
 async function fetchMessages() {
@@ -78,6 +164,29 @@ onMounted(() => {
     if (props.video) {
         fetchMessages();
     }
+
+    if (!document.getElementById('youtube-iframe-api')) {
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        tag.id = 'youtube-iframe-api';
+        document.body.appendChild(tag);
+    }
+
+    // Inicializa o player de forma apropriada
+    window.onYouTubeIframeAPIReady = () => {
+        const player = new window.YT.Player(transcriptPlayer.value, {
+            events: {
+                onReady: () => {
+                    updateCurrentTimeLoop();
+                }
+            }
+        });
+    };
+});
+
+onUnmounted(() => {
+    window.removeEventListener('message', receiveMessage);
+    if (intervalRef.value) clearInterval(intervalRef.value);
 });
 
 // Envia mensagem ao pressionar Enter
@@ -86,6 +195,8 @@ function handleKeyDown(event: KeyboardEvent) {
         event.preventDefault();
         sendMessage();
     }
+
+
 }
 
 // Envia mensagem para o backend
@@ -205,7 +316,7 @@ function parseTranscription(transcription: string) {
 }
 
 // Renderiza mensagens com formatação básica (negrito, listas, etc.)
-function formatMessage(text: string): string {
+function formatMessage(text: string): any {
     return marked.parse(text);
 }
 </script>
@@ -245,9 +356,8 @@ function formatMessage(text: string): string {
                                 </DialogDescription>
                             </DialogHeader>
 
-                            <!-- Conteúdo lado a lado -->
                             <div class="flex gap-4 p-6 overflow-auto max-h-[65vh]">
-                                <!-- Vídeo à esquerda -->
+                                <!-- Vídeo -->
                                 <div class="w-1/2 flex justify-center items-center">
                                     <div class="relative w-full" style="aspect-ratio: 16 / 9;">
                                         <iframe
@@ -260,8 +370,7 @@ function formatMessage(text: string): string {
                                     </div>
                                 </div>
 
-
-                                <!-- Transcrição à direita -->
+                                <!-- Transcrição -->
                                 <div class="w-1/2 overflow-y-auto p-3">
                                     <input
                                         v-model="searchTerm"
@@ -285,6 +394,16 @@ function formatMessage(text: string): string {
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- 🔄 Switch e Legenda Inline -->
+                            <div class="flex items-center gap-2 mt-4">
+                                <label class="text-sm">Legenda:</label>
+                                <Switch v-model:checked="showSubtitle" />
+                            </div>
+
+                            <div v-if="showSubtitle" class="mt-2 p-2 bg-black/70 text-white text-sm rounded text-center min-h-[40px]">
+                                {{ currentSubtitle }}
                             </div>
 
                             <DialogFooter class="p-4 pt-0">

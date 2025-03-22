@@ -1,6 +1,8 @@
 <script setup>
-import { ref, computed, defineProps, defineEmits } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { Progress } from '@/components/ui/progress';
 import axios from 'axios';
+import '@/echo';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,7 +33,28 @@ const showTrash = ref(false); // Exibe ou não a lixeira
 const processingVideos = computed(() => props.videos.filter(v => v.status === 'processing'));
 const completedVideos = computed(() => props.videos.filter(v => v.status === 'completed'));
 const failedVideos = computed(() => props.videos.filter(v => ['failed_video_processing', 'failed_audio_processing', 'failed_transcription'].includes(v.status)));
-const sentVideos = computed(() => props.videos.filter(v => !v.status || v.status === 'sent')); // Status "enviado"
+const progressMap = ref({});
+
+
+onMounted(() => {
+    props.videos.forEach(video => {
+        if (video.status === 'processing') {
+            window.Echo.private(`video.progress.${video.id}`)
+                .listen('.progress', (e) => {
+                    progressMap.value[video.id] = e.percent
+                });
+
+        }
+    });
+});
+
+onUnmounted(() => {
+    props.videos.forEach(video => {
+        if (video.status === 'processing') {
+            window.Echo.leave(`video.progress.${video.id}`);
+        }
+    });
+});
 
 async function forceDelete(videoId) {
     await axios.delete(`/api/videos/${videoId}/force-delete`);
@@ -89,19 +112,27 @@ async function emptyTrash() {
                     <div
                         v-for="video in processingVideos"
                         :key="video.id"
-                        class="p-2 mb-2 border border-gray-700 rounded cursor-pointer flex justify-between items-center"
+                        class="p-2 mb-2 border border-gray-700 rounded hover:bg-white/5"
                         :class="[
-                                  'p-2 mb-2 border border-gray-700 rounded cursor-pointer flex justify-between items-center hover:bg-white/5',
-                                  props.selectedVideo?.id === video.id ? 'bg-white/10' : ''
-                                ]">
-                          <span @click="emit('select', video)">
-                            {{ video.title }}
-                          </span>
-                        <Button variant="ghost" size="sm" @click="emit('delete', video.id)">🗑️</Button>
+                                    props.selectedVideo?.id === video.id ? 'bg-white/10' : ''
+                                  ]"
+                    >
+                        <!-- Cabeçalho: título e botão excluir -->
+                        <div class="flex justify-between items-center cursor-pointer" @click="emit('select', video)">
+                            <span class="font-medium">{{ video.title }}</span>
+                            <Button variant="ghost" size="sm" @click.stop="emit('delete', video.id)">🗑️</Button>
+                        </div>
+
+                        <!-- Barra de progresso -->
+                        <div class="w-full mt-2">
+                            <Progress :model-value="progressMap[video.id] || 0" class="h-2" />
+                            <p class="text-xs text-gray-400 mt-1">{{ progressMap[video.id] || 0 }}%</p>
+                        </div>
                     </div>
                 </div>
                 <p v-else class="text-gray-400 mt-2 text-center">Nenhum vídeo na fila</p>
             </TabsContent>
+
 
             <!-- Concluído -->
             <TabsContent value="completed">

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Events\VideoProcessed;
 use App\Events\VideoProcessingFailed;
+use App\Events\VideoProcessingProgress;
 use App\Models\Video;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -39,6 +40,7 @@ class ProcessVideoJob implements ShouldQueue
 
         try {
             Process::timeout(3000)->run("yt-dlp -f best -o \"{$videoPath}\" \"{$video->youtube_url}\"");
+            event(new VideoProcessingProgress($video, 20));
 
             if (!file_exists($videoPath)) {
                 $video->update(['status' => 'failed_video_processing']);
@@ -47,6 +49,7 @@ class ProcessVideoJob implements ShouldQueue
             }
 
             Process::timeout(3000)->run("ffmpeg -i \"{$videoPath}\" -vn -acodec pcm_s16le -ar 16000 -ac 1 \"{$audioPath}\"");
+            event(new VideoProcessingProgress($video, 40));
 
             if (!file_exists($audioPath)) {
                 $video->update(['status' => 'failed_audio_processing']);
@@ -57,6 +60,8 @@ class ProcessVideoJob implements ShouldQueue
             $output = Process::timeout(3000)
                 ->path(dirname($audioPath))
                 ->run("whisper \"{$videoId}.wav\" --model base");
+
+            event(new VideoProcessingProgress($video, 60));
 
             $transcription = $output->output();
 
@@ -78,6 +83,9 @@ class ProcessVideoJob implements ShouldQueue
                 ],
             ]);
 
+
+            event(new VideoProcessingProgress($video, 80));
+
             $summary = $response->json('choices.0.message.content') ?? 'Erro ao resumir texto';
 
             $video->update([
@@ -86,7 +94,7 @@ class ProcessVideoJob implements ShouldQueue
                 'language' => $language,
                 'status' => 'completed',
             ]);
-
+            event(new VideoProcessingProgress($video, 100));
             event(new VideoProcessed($video));
         } catch (\Throwable $e) {
             Log::error("Erro ao processar vídeo {$videoId}: {$e->getMessage()}");
